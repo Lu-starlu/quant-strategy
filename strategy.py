@@ -1,13 +1,33 @@
 import backtrader as bt
 import pandas as pd
 import numpy as np
-from datetime import datetime,timedelta
+
+# 生成模拟ETF行情数据
+def generate_sim_data(days=500):
+    np.random.seed(666)
+    price = 1.0
+    data_list = []
+    for i in range(days):
+        ret = np.random.normal(0.0005, 0.018)
+        price *= (1 + ret)
+        date = pd.Timestamp("2024‑01‑01") + pd.Timedelta(i, unit="d")
+        data_list.append({
+            "datetime": date,
+            "open": price*0.998,
+            "high": price*1.005,
+            "low": price*0.995,
+            "close": price,
+            "volume": 1000000
+        })
+    df = pd.DataFrame(data_list)
+    df.set_index("datetime", inplace=True)
+    return df
 
 # 双均线策略
 class DualMA(bt.Strategy):
     params = (
-        ("fast_period",5),
-        ("slow_period",20),
+        ("fast_period", 10),
+        ("slow_period", 30),
     )
 
     def __init__(self):
@@ -23,50 +43,34 @@ class DualMA(bt.Strategy):
             if self.crossover < 0:
                 self.close()
 
-
-# 生成模拟ETF行情，不需要网络
-def make_sim_data(start_date="2022-01-01", end_date="2026-08-01"):
-    start = datetime.strptime(start_date,"%Y-%m-%d")
-    end = datetime.strptime(end_date,"%Y-%m-%d")
-    dates = []
-    current = start
-    np.random.seed(42)
-    price = 3.0
-    o,h,l,c,vol = [],[],[],[],[]
-    while current <= end:
-        # 简单模拟交易日，跳过周末
-        if current.weekday() <5:
-            dates.append(current)
-            ret = np.random.normal(0,0.012)
-            price *= (1+ret)
-            openp = price * (1+np.random.normal(0,0.003))
-            highp = max(openp,price)*(1+abs(np.random.normal(0,0.005)))
-            lowp = min(openp,price)*(1-abs(np.random.normal(0,0.005)))
-            o.append(openp)
-            h.append(highp)
-            l.append(lowp)
-            c.append(price)
-            vol.append(np.random.randint(500000,3000000))
-        current += timedelta(days=1)
-    df = pd.DataFrame({
-        "open":o,"high":h,"low":l,"close":c,"volume":vol
-    },index=dates)
-    return df
-
-
+# 分析器：回测指标
 if __name__ == "__main__":
     cerebro = bt.Cerebro()
     cerebro.addstrategy(DualMA)
 
-    df_sim = make_sim_data()
+    df_sim = generate_sim_data(500)
     data = bt.feeds.PandasData(dataname=df_sim)
     cerebro.adddata(data)
 
-    cerebro.broker.setcash(100000)
+    cerebro.broker.setcash(100000.0)
     cerebro.broker.setcommission(0.0003)
 
-    print(f"初始资金：{cerebro.broker.getvalue():.2f}")
+    # 关键量化指标分析器
+    cerebro.addanalyzer(bt.analyzers.Returns, _name="returns")
+    cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
+    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.02)
+
+    print("初始资金：%.2f" % cerebro.broker.getvalue())
     result = cerebro.run()
-    final_val = cerebro.broker.getvalue()
-    print(f"回测结束资产：{final_val:.2f}")
-    print(f"策略总收益率：{(final_val/100000 -1)*100:.2f} %")
+    strat = result[0]
+    print("期末资金：%.2f" % cerebro.broker.getvalue())
+
+    ret_ana = strat.analyzers.returns.get_analysis()
+    dd_ana = strat.analyzers.drawdown.get_analysis()
+    sharpe_ana = strat.analyzers.sharpe.get_analysis()
+
+    print("\n==========回测核心指标==========")
+    print(f"总收益率：{ret_ana['rnorm100']:.2f} %")
+    print(f"年化收益率：{ret_ana['rnorm100']/2:.2f} %")
+    print(f"最大回撤：{dd_ana['max']['drawdown']:.2f} %")
+    print(f"夏普比率：{sharpe_ana['sharperatio']:.3f}")
