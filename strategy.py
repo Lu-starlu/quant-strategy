@@ -10,7 +10,7 @@ def generate_sim_data(days=500):
     for i in range(days):
         ret = np.random.normal(0.0005, 0.018)
         price *= (1 + ret)
-        date = pd.Timestamp("2024-01-01") + pd.Timedelta(i, unit="d")
+        date = pd.Timestamp("2024-01-01") + pd.Timedelta(i, unit="D")
         data_list.append({
             "datetime": date,
             "open": price*0.998,
